@@ -1,0 +1,10 @@
+## Copy to local.properties and fill in values from https://id.vk.com
+## Also ensure sdk.dir points to your Android SDK.
+
+# sdk.dir=C\:\\Users\\YOU\\AppData\\Local\\Android\\Sdk
+
+VKIDClientID=YOUR_APP_ID
+VKIDClientSecret=YOUR_CLIENT_SECRET
+VKIDRedirectHost=vk.ru
+# Must be vk{APP_ID}, e.g. vk1234567
+VKIDRedirectScheme=vkYOUR_APP_ID
