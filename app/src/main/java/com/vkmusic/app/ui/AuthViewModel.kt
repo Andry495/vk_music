@@ -16,7 +16,9 @@ import com.vkmusic.app.auth.VkIdAuth
 import com.vkmusic.app.auth.VkLoginActivity
 import com.vkmusic.app.auth.VkSession
 import com.vkmusic.app.data.Track
+import com.vkmusic.app.player.PlaybackState
 import com.vkmusic.app.vk.VkWebAudioClient
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +27,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val TAG = "VkMusicAuth"
+
+enum class BrowseTab {
+    Recoms,
+    Search,
+    Library
+}
 
 data class AuthUiState(
     val authState: AuthState = AuthState.Loading,
@@ -37,9 +45,13 @@ data class AuthUiState(
     val password: String = "",
     val twoFactorCode: String = "",
     val vkidConfigured: Boolean = VkIdAuth.isConfigured,
+    val tab: BrowseTab = BrowseTab.Recoms,
     val tracks: List<Track> = emptyList(),
     val tracksLoading: Boolean = false,
-    val tracksError: String? = null
+    val tracksError: String? = null,
+    val searchQuery: String = "",
+    val playingTrackId: String? = null,
+    val playbackError: String? = null
 )
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
@@ -48,15 +60,30 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val probe = app.audioAccessProbe
     private val webAudio = app.webAudioClient
     private val clientAuth = app.vkClientAuth
+    private val player = app.musicPlayer
 
     private val _ui = MutableStateFlow(AuthUiState())
     val ui: StateFlow<AuthUiState> = _ui.asStateFlow()
+
+    val playback: StateFlow<PlaybackState> = player.state
+
+    private var loadJob: Job? = null
 
     /** Host activity sets this to open WebView login. */
     var launchWebLogin: ((profile: String) -> Unit)? = null
 
     init {
         viewModelScope.launch { restore() }
+        viewModelScope.launch {
+            player.state.collect { pb ->
+                _ui.update {
+                    it.copy(
+                        playingTrackId = pb.track?.id,
+                        playbackError = pb.error
+                    )
+                }
+            }
+        }
     }
 
     private suspend fun restore() {
@@ -154,6 +181,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun updateLogin(value: String) = _ui.update { it.copy(login = value) }
     fun updatePassword(value: String) = _ui.update { it.copy(password = value) }
     fun updateTwoFactor(value: String) = _ui.update { it.copy(twoFactorCode = value) }
+    fun updateSearchQuery(value: String) = _ui.update { it.copy(searchQuery = value) }
 
     fun openClientForm() {
         _ui.update {
@@ -214,6 +242,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         viewModelScope.launch {
             _ui.update { it.copy(busy = true) }
+            player.stop()
             runCatching { VkIdAuth.logout() }
             sessionStore.clear()
             _ui.value = AuthUiState(
@@ -225,37 +254,108 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearMessage() = _ui.update { it.copy(message = null) }
 
+    fun selectTab(tab: BrowseTab) {
+        if (_ui.value.tab == tab) return
+        _ui.update { it.copy(tab = tab) }
+        val state = _ui.value.authState
+        if (state is AuthState.Ready) {
+            when (tab) {
+                BrowseTab.Recoms, BrowseTab.Library -> loadTracks(state.session, tab)
+                BrowseTab.Search -> {
+                    if (_ui.value.searchQuery.isNotBlank()) {
+                        loadTracks(state.session, tab)
+                    } else {
+                        _ui.update { it.copy(tracks = emptyList(), tracksError = null, tracksLoading = false) }
+                    }
+                }
+            }
+        }
+    }
+
     fun reloadLibrary() {
         val state = _ui.value.authState
         if (state !is AuthState.Ready) return
-        viewModelScope.launch { loadLibrary(state.session) }
+        loadTracks(state.session, _ui.value.tab)
     }
 
-    private suspend fun loadLibrary(session: VkSession) {
-        _ui.update { it.copy(tracksLoading = true, tracksError = null) }
-        try {
-            val tracks = webAudio.fetchMyAudios(session, limit = 80)
-            Log.i(TAG, "LIBRARY tracks=${tracks.size}")
-            _ui.update {
-                it.copy(
-                    tracks = tracks,
-                    tracksLoading = false,
-                    tracksError = when {
-                        tracks.isEmpty() ->
-                            "Сессия OK, но треков нет. В «Моей музыке» VK пусто " +
-                                "(placeholder_music_no_audios). Добавьте треки в приложении VK " +
-                                "или нажмите Обновить после этого."
-                        else -> null
+    fun submitSearch() {
+        val state = _ui.value.authState
+        if (state !is AuthState.Ready) return
+        _ui.update { it.copy(tab = BrowseTab.Search) }
+        loadTracks(state.session, BrowseTab.Search)
+    }
+
+    fun playTrack(track: Track) {
+        val state = _ui.value.authState
+        if (state !is AuthState.Ready) return
+        viewModelScope.launch {
+            _ui.update { it.copy(playbackError = null, busy = true) }
+            try {
+                var resolved = track
+                val url = track.streamUrl
+                if (url.isNullOrBlank() || url.contains("audio_api_unavailable") || url.contains("?extra=")) {
+                    resolved = webAudio.resolveStreamUrl(state.session, track)
+                }
+                val playUrl = resolved.streamUrl
+                if (playUrl.isNullOrBlank() || !playUrl.startsWith("http")) {
+                    _ui.update {
+                        it.copy(
+                            busy = false,
+                            playbackError = "Нет ссылки на поток для «${track.title}»"
+                        )
                     }
-                )
+                    return@launch
+                }
+                player.play(resolved, playUrl)
+                _ui.update { it.copy(busy = false, playingTrackId = resolved.id) }
+            } catch (e: Exception) {
+                Log.e(TAG, "play error ${e.message}")
+                _ui.update {
+                    it.copy(busy = false, playbackError = e.message ?: "Ошибка воспроизведения")
+                }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "LIBRARY error ${e.message}")
-            _ui.update {
-                it.copy(
-                    tracksLoading = false,
-                    tracksError = e.message ?: "Ошибка загрузки"
-                )
+        }
+    }
+
+    fun togglePlayback() = player.toggle()
+
+    private fun loadTracks(session: VkSession, tab: BrowseTab) {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            _ui.update { it.copy(tracksLoading = true, tracksError = null) }
+            try {
+                val tracks = when (tab) {
+                    BrowseTab.Recoms -> webAudio.fetchRecoms(session, limit = 80)
+                    BrowseTab.Library -> webAudio.fetchMyAudios(session, limit = 80)
+                    BrowseTab.Search -> {
+                        val q = _ui.value.searchQuery
+                        if (q.isBlank()) emptyList() else webAudio.search(session, q, limit = 80)
+                    }
+                }
+                Log.i(TAG, "LIBRARY tab=$tab tracks=${tracks.size}")
+                _ui.update {
+                    it.copy(
+                        tracks = tracks,
+                        tracksLoading = false,
+                        tracksError = when {
+                            tracks.isEmpty() && tab == BrowseTab.Library ->
+                                "В «Моей музыке» пусто. Откройте Рекомендации или воспользуйтесь поиском."
+                            tracks.isEmpty() && tab == BrowseTab.Recoms ->
+                                "Не удалось загрузить рекомендации. Попробуйте поиск."
+                            tracks.isEmpty() && tab == BrowseTab.Search ->
+                                "Ничего не найдено по запросу."
+                            else -> null
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "LIBRARY error ${e.message}")
+                _ui.update {
+                    it.copy(
+                        tracksLoading = false,
+                        tracksError = e.message ?: "Ошибка загрузки"
+                    )
+                }
             }
         }
     }
@@ -283,11 +383,12 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         showClientForm = false,
                         needsTwoFactor = false,
                         message = null,
+                        tab = BrowseTab.Recoms,
                         tracksLoading = true,
                         tracksError = null
                     )
                 }
-                loadLibrary(working)
+                loadTracks(working, BrowseTab.Recoms)
             }
             is AudioProbeResult.Denied -> {
                 val perms = probe.readAppPermissions(working)
@@ -328,5 +429,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    override fun onCleared() {
+        // player живёт в Application — не release здесь
+        super.onCleared()
     }
 }

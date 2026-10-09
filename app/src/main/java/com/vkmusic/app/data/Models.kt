@@ -8,5 +8,14 @@ data class Track(
     val artist: String,
     val durationSeconds: Long = 0L,
     val streamUrl: String? = null,
-    val thumbnailUrl: String? = null
+    val thumbnailUrl: String? = null,
+    /** ownerId_audioId_actionHash_urlHash для act=reload_audio */
+    val reloadKey: String? = null,
+    val source: TrackSource = TrackSource.Library
 )
+
+enum class TrackSource {
+    Library,
+    Recoms,
+    Search
+}

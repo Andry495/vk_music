@@ -1,5 +1,6 @@
 package com.vkmusic.app.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,19 +12,27 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,6 +41,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,10 +56,12 @@ import com.vk.id.onetap.compose.onetap.OneTap
 import com.vkmusic.app.auth.AuthState
 import com.vkmusic.app.auth.VkLoginActivity
 import com.vkmusic.app.data.Track
+import com.vkmusic.app.player.PlaybackState
 
 @Composable
 fun AuthScreen(viewModel: AuthViewModel) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val playback by viewModel.playback.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(ui.message) {
@@ -56,9 +69,21 @@ fun AuthScreen(viewModel: AuthViewModel) {
         snackbar.showSnackbar(msg)
         viewModel.clearMessage()
     }
+    LaunchedEffect(ui.playbackError) {
+        val msg = ui.playbackError ?: return@LaunchedEffect
+        snackbar.showSnackbar(msg)
+    }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) }
+        snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = {
+            if (ui.authState is AuthState.Ready && playback.track != null) {
+                MiniPlayerBar(
+                    playback = playback,
+                    onToggle = viewModel::togglePlayback
+                )
+            }
+        }
     ) { padding ->
         when (val state = ui.authState) {
             AuthState.Loading -> {
@@ -83,11 +108,12 @@ fun AuthScreen(viewModel: AuthViewModel) {
                     ?: "id${state.session.userId}",
                 source = state.session.source.name,
                 audioVia = state.session.audioVia.ifBlank { "web" },
-                tracks = ui.tracks,
-                tracksLoading = ui.tracksLoading,
-                tracksError = ui.tracksError,
-                busy = ui.busy,
+                ui = ui,
+                onTab = viewModel::selectTab,
+                onSearchChange = viewModel::updateSearchQuery,
+                onSearch = viewModel::submitSearch,
                 onReload = viewModel::reloadLibrary,
+                onPlay = viewModel::playTrack,
                 onLogout = viewModel::logout
             )
 
@@ -122,11 +148,12 @@ private fun ReadyPane(
     sessionLabel: String,
     source: String,
     audioVia: String,
-    tracks: List<Track>,
-    tracksLoading: Boolean,
-    tracksError: String?,
-    busy: Boolean,
+    ui: AuthUiState,
+    onTab: (BrowseTab) -> Unit,
+    onSearchChange: (String) -> Unit,
+    onSearch: () -> Unit,
     onReload: () -> Unit,
+    onPlay: (Track) -> Unit,
     onLogout: () -> Unit
 ) {
     val viaLabel = when (audioVia) {
@@ -140,45 +167,91 @@ private fun ReadyPane(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        OutlinedTextField(
+            value = ui.searchQuery,
+            onValueChange = onSearchChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp),
+            label = { Text("Поиск треков") },
+            singleLine = true,
+            trailingIcon = {
+                IconButton(onClick = onSearch, enabled = !ui.tracksLoading && !ui.busy) {
+                    Icon(Icons.Default.Search, contentDescription = "Искать")
+                }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { onSearch() })
+        )
+
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                if (tracksLoading) "Загрузка…" else "Моя музыка: ${tracks.size}",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
+            FilterChip(
+                selected = ui.tab == BrowseTab.Recoms,
+                onClick = { onTab(BrowseTab.Recoms) },
+                label = { Text("Реком") }
             )
-            TextButton(onClick = onReload, enabled = !tracksLoading && !busy) {
-                Text("Обновить")
+            FilterChip(
+                selected = ui.tab == BrowseTab.Search,
+                onClick = { onTab(BrowseTab.Search) },
+                label = { Text("Поиск") }
+            )
+            FilterChip(
+                selected = ui.tab == BrowseTab.Library,
+                onClick = { onTab(BrowseTab.Library) },
+                label = { Text("Моя") }
+            )
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onReload, enabled = !ui.tracksLoading && !ui.busy) {
+                Text("↻")
             }
-            OutlinedButton(onClick = onLogout, enabled = !busy) {
+            TextButton(onClick = onLogout, enabled = !ui.busy) {
                 Text("Выйти")
             }
         }
-        if (tracksError != null) {
+
+        Text(
+            when {
+                ui.tracksLoading -> "Загрузка…"
+                else -> when (ui.tab) {
+                    BrowseTab.Recoms -> "Рекомендации: ${ui.tracks.size}"
+                    BrowseTab.Search -> "Найдено: ${ui.tracks.size}"
+                    BrowseTab.Library -> "Моя музыка: ${ui.tracks.size}"
+                }
+            },
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+        )
+
+        if (ui.tracksError != null) {
             Text(
-                tracksError,
+                ui.tracksError,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall
             )
         }
-        if (tracksLoading && tracks.isEmpty()) {
+        if (ui.tracksLoading && ui.tracks.isEmpty()) {
             Spacer(Modifier.height(16.dp))
             CircularProgressIndicator()
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp)
+                contentPadding = PaddingValues(bottom = 88.dp)
             ) {
                 items(
-                    items = tracks,
+                    items = ui.tracks,
                     key = { track: Track -> track.id }
                 ) { track: Track ->
-                    TrackRow(track)
+                    TrackRow(
+                        track = track,
+                        playing = ui.playingTrackId == track.id,
+                        onClick = { onPlay(track) }
+                    )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
@@ -187,31 +260,84 @@ private fun ReadyPane(
 }
 
 @Composable
-private fun TrackRow(track: Track) {
-    Column(
+private fun TrackRow(
+    track: Track,
+    playing: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 10.dp)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            track.title,
-            style = MaterialTheme.typography.titleSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+        Column(Modifier.weight(1f)) {
+            Text(
+                track.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (playing) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                buildString {
+                    append(track.artist)
+                    if (track.durationSeconds > 0) {
+                        append(" · ")
+                        append("%d:%02d".format(track.durationSeconds / 60, track.durationSeconds % 60))
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary
         )
-        Text(
-            buildString {
-                append(track.artist)
-                if (track.durationSeconds > 0) {
-                    append(" · ")
-                    append("%d:%02d".format(track.durationSeconds / 60, track.durationSeconds % 60))
-                }
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+    }
+}
+
+@Composable
+private fun MiniPlayerBar(
+    playback: PlaybackState,
+    onToggle: () -> Unit
+) {
+    val track = playback.track ?: return
+    Surface(tonalElevation = 3.dp, shadowElevation = 4.dp) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onToggle) {
+                Icon(
+                    imageVector = if (playback.playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (playback.playing) "Пауза" else "Играть"
+                )
+            }
+        }
     }
 }
 
