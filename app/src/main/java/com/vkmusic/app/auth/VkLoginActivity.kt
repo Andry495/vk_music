@@ -30,12 +30,7 @@ class VkLoginActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private var finished = false
 
-    private val profile: VkClientProfiles.Profile by lazy {
-        when (intent.getStringExtra(EXTRA_PROFILE)) {
-            PROFILE_OFFICIAL -> VkClientProfiles.Official
-            else -> VkClientProfiles.Kate
-        }
-    }
+    private val profile: VkClientProfiles.Profile = VkClientProfiles.Kate
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -209,9 +204,6 @@ class VkLoginActivity : ComponentActivity() {
         const val EXTRA_CLEAR_COOKIES = "clear_cookies"
         const val EXTRA_COOKIES = "cookies"
 
-        const val PROFILE_KATE = "Kate"
-        const val PROFILE_OFFICIAL = "Official"
-
         private const val REDIRECT_URI = "https://oauth.vk.com/blank.html"
         private const val SCOPE =
             "audio,offline,friends,groups,status,wall,messages,photos,video,docs,notify"
@@ -219,11 +211,9 @@ class VkLoginActivity : ComponentActivity() {
 
         fun createIntent(
             context: Context,
-            profile: String = PROFILE_OFFICIAL,
             clearCookies: Boolean = true
         ): Intent =
             Intent(context, VkLoginActivity::class.java)
-                .putExtra(EXTRA_PROFILE, profile)
                 .putExtra(EXTRA_CLEAR_COOKIES, clearCookies)
 
         fun buildAuthorizeUrl(profile: VkClientProfiles.Profile): String {

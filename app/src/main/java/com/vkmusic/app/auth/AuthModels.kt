@@ -1,49 +1,29 @@
 package com.vkmusic.app.auth
 
-enum class AuthSource {
-    /** Official VK ID SDK (optional; needs id.vk.com app). */
-    VkId,
-    /** WebView Implicit Flow — основной вход без регистрации приложения. */
-    WebView,
-    /** Password grant (запасной). */
-    Client
-}
-
+/**
+ * Сессия браузерного входа (Kate WebView): OAuth-токен + cookies (remixsid) для музыки.
+ */
 data class VkSession(
     val accessToken: String,
     val userId: Long,
-    val source: AuthSource,
-    /** Required for WebView/Client API calls; empty for VK ID. */
+    /** Kate Mobile UA — как при авторизации. */
     val userAgent: String = "",
     val expiresAtEpochMs: Long = 0L,
     val displayName: String? = null,
     /**
-     * Cookie-строка из WebView (remixsid и др.). Нужна для музыки через al_audio.php,
-     * когда OAuth-методы audio.* отвечают error 3.
+     * Cookie-строка из WebView (remixsid и др.) для al_audio.php.
      */
     val cookies: String = "",
-    /** Как подтвердили доступ к музыке: api / web. */
+    /** Как подтвердили доступ к музыке: web / api. */
     val audioVia: String = ""
 )
 
 sealed class AuthState {
     data object Loading : AuthState()
     data object LoggedOut : AuthState()
-    /** Сессия есть, но audio недоступен — показать запасной вход. */
-    data class NeedsAudioFallback(val session: VkSession) : AuthState()
+    /** Сессия есть, но cookies/музыка недоступны — нужен повторный вход. */
+    data class NeedsReauth(val session: VkSession) : AuthState()
     data class Ready(val session: VkSession) : AuthState()
-}
-
-sealed class ClientAuthResult {
-    data class Success(val session: VkSession) : ClientAuthResult()
-    data class NeedsTwoFactor(
-        val validationType: String?,
-        val validationSid: String?,
-        val phoneMask: String?,
-        val redirectUri: String?
-    ) : ClientAuthResult()
-
-    data class Error(val message: String, val code: String? = null) : ClientAuthResult()
 }
 
 sealed class AudioProbeResult {

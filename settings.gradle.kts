@@ -1,5 +1,3 @@
-import java.net.URI
-
 pluginManagement {
     repositories {
         google {
@@ -11,8 +9,6 @@ pluginManagement {
         }
         mavenCentral()
         gradlePluginPortal()
-        maven(url = "https://nexus-external.vkteam.ru/repository/vkid-sdk-android/")
-        maven(url = "https://nexus-external.vkteam.ru/repository/maven/")
     }
 }
 
@@ -21,12 +17,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven {
-            url = URI("https://nexus-external.vkteam.ru/repository/vkid-sdk-android/")
-        }
-        maven {
-            url = URI("https://nexus-external.vkteam.ru/repository/maven/")
-        }
     }
 }
 

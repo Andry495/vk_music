@@ -1,38 +1,21 @@
 package com.vkmusic.app.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,22 +24,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.vk.id.AccessToken
-import com.vk.id.auth.AuthCodeData
-import com.vk.id.auth.VKIDAuthUiParams
-import com.vk.id.onetap.common.OneTapOAuth
-import com.vk.id.onetap.compose.onetap.OneTap
 import com.vkmusic.app.auth.AuthState
-import com.vkmusic.app.auth.VkLoginActivity
-import com.vkmusic.app.data.Track
-import com.vkmusic.app.player.PlaybackState
 
 @Composable
 fun AuthScreen(viewModel: AuthViewModel) {
@@ -72,270 +42,95 @@ fun AuthScreen(viewModel: AuthViewModel) {
     LaunchedEffect(ui.playbackError) {
         val msg = ui.playbackError ?: return@LaunchedEffect
         snackbar.showSnackbar(msg)
+        viewModel.clearMessage()
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            if (ui.authState is AuthState.Ready && playback.track != null) {
-                MiniPlayerBar(
+    when (val state = ui.authState) {
+        is AuthState.Ready -> {
+            Box(Modifier.fillMaxSize()) {
+                MainScreen(
+                    session = state.session,
+                    ui = ui,
                     playback = playback,
-                    onToggle = viewModel::togglePlayback
+                    onSelectTab = viewModel::selectMainTab,
+                    onLibrarySection = viewModel::selectLibrarySection,
+                    onSearchChange = viewModel::updateSearchQuery,
+                    onSearch = viewModel::submitSearch,
+                    onReload = viewModel::reloadLibrary,
+                    onPlay = viewModel::playTrack,
+                    onToggle = viewModel::togglePlayback,
+                    onNext = viewModel::playNext,
+                    onPrevious = viewModel::playPrevious,
+                    onSeek = viewModel::seekTo,
+                    onOpenSettings = viewModel::openSettings,
+                    onCloseSettings = viewModel::closeSettings,
+                    onCacheSettingsChange = viewModel::updateCacheSettings,
+                    onClearCache = viewModel::clearAudioCache,
+                    onLogout = viewModel::logout,
+                    onAddToMyMusic = viewModel::addToMyMusic,
+                    onRemoveFromMyMusic = viewModel::removeFromMyMusic,
+                    onOpenAddToPlaylist = viewModel::openAddToPlaylist,
+                    onRemoveFromPlaylist = viewModel::removeFromPlaylist,
+                    onClosePlaylistPicker = viewModel::closePlaylistPicker,
+                    onPickPlaylist = viewModel::addTrackToPlaylist,
+                    onOpenPlaylist = viewModel::openPlaylist,
+                    onClosePlaylist = viewModel::closePlaylist,
+                    onOpenCreatePlaylist = viewModel::openCreatePlaylist,
+                    onCloseCreatePlaylist = viewModel::closeCreatePlaylist,
+                    onNewPlaylistTitle = viewModel::updateNewPlaylistTitle,
+                    onCreatePlaylist = viewModel::createPlaylist,
+                    onDeletePlaylist = viewModel::deletePlaylist
+                )
+                SnackbarHost(
+                    hostState = snackbar,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 140.dp)
                 )
             }
         }
-    ) { padding ->
-        when (val state = ui.authState) {
-            AuthState.Loading -> {
-                Column(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(12.dp))
-                    Text("Проверка сессии…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
 
-            is AuthState.Ready -> ReadyPane(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                sessionLabel = state.session.displayName
-                    ?: "id${state.session.userId}",
-                source = state.session.source.name,
-                audioVia = state.session.audioVia.ifBlank { "web" },
-                ui = ui,
-                onTab = viewModel::selectTab,
-                onSearchChange = viewModel::updateSearchQuery,
-                onSearch = viewModel::submitSearch,
-                onReload = viewModel::reloadLibrary,
-                onPlay = viewModel::playTrack,
-                onLogout = viewModel::logout
-            )
-
-            AuthState.LoggedOut -> LoginPane(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState()),
-                ui = ui,
-                viewModel = viewModel
-            )
-
-            is AuthState.NeedsAudioFallback -> FallbackPane(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState()),
-                ui = ui,
-                viewModel = viewModel,
-                userLabel = state.session.displayName
-                    ?: "id${state.session.userId}"
-            )
-        }
-    }
-}
-
-@Composable
-private fun ReadyPane(
-    modifier: Modifier,
-    sessionLabel: String,
-    source: String,
-    audioVia: String,
-    ui: AuthUiState,
-    onTab: (BrowseTab) -> Unit,
-    onSearchChange: (String) -> Unit,
-    onSearch: () -> Unit,
-    onReload: () -> Unit,
-    onPlay: (Track) -> Unit,
-    onLogout: () -> Unit
-) {
-    val viaLabel = when (audioVia) {
-        "api" -> "OAuth API"
-        else -> "веб (al_audio)"
-    }
-    Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("VK Music", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "$sessionLabel · $source · $viaLabel",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        OutlinedTextField(
-            value = ui.searchQuery,
-            onValueChange = onSearchChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp),
-            label = { Text("Поиск треков") },
-            singleLine = true,
-            trailingIcon = {
-                IconButton(onClick = onSearch, enabled = !ui.tracksLoading && !ui.busy) {
-                    Icon(Icons.Default.Search, contentDescription = "Искать")
-                }
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSearch() })
-        )
-
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = ui.tab == BrowseTab.Recoms,
-                onClick = { onTab(BrowseTab.Recoms) },
-                label = { Text("Реком") }
-            )
-            FilterChip(
-                selected = ui.tab == BrowseTab.Search,
-                onClick = { onTab(BrowseTab.Search) },
-                label = { Text("Поиск") }
-            )
-            FilterChip(
-                selected = ui.tab == BrowseTab.Library,
-                onClick = { onTab(BrowseTab.Library) },
-                label = { Text("Моя") }
-            )
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onReload, enabled = !ui.tracksLoading && !ui.busy) {
-                Text("↻")
-            }
-            TextButton(onClick = onLogout, enabled = !ui.busy) {
-                Text("Выйти")
-            }
-        }
-
-        Text(
-            when {
-                ui.tracksLoading -> "Загрузка…"
-                else -> when (ui.tab) {
-                    BrowseTab.Recoms -> "Рекомендации: ${ui.tracks.size}"
-                    BrowseTab.Search -> "Найдено: ${ui.tracks.size}"
-                    BrowseTab.Library -> "Моя музыка: ${ui.tracks.size}"
-                }
-            },
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-        )
-
-        if (ui.tracksError != null) {
-            Text(
-                ui.tracksError,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        if (ui.tracksLoading && ui.tracks.isEmpty()) {
-            Spacer(Modifier.height(16.dp))
-            CircularProgressIndicator()
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 88.dp)
-            ) {
-                items(
-                    items = ui.tracks,
-                    key = { track: Track -> track.id }
-                ) { track: Track ->
-                    TrackRow(
-                        track = track,
-                        playing = ui.playingTrackId == track.id,
-                        onClick = { onPlay(track) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TrackRow(
-    track: Track,
-    playing: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                track.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = if (playing) FontWeight.Bold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                buildString {
-                    append(track.artist)
-                    if (track.durationSeconds > 0) {
-                        append(" · ")
-                        append("%d:%02d".format(track.durationSeconds / 60, track.durationSeconds % 60))
+        else -> {
+            Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+                when (state) {
+                    AuthState.Loading -> {
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .padding(padding),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(12.dp))
+                            Text("Проверка сессии…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Icon(
-            imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary
-        )
-    }
-}
 
-@Composable
-private fun MiniPlayerBar(
-    playback: PlaybackState,
-    onToggle: () -> Unit
-) {
-    val track = playback.track ?: return
-    Surface(tonalElevation = 3.dp, shadowElevation = 4.dp) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    track.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    track.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            IconButton(onClick = onToggle) {
-                Icon(
-                    imageVector = if (playback.playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (playback.playing) "Пауза" else "Играть"
-                )
+                    AuthState.LoggedOut -> LoginPane(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                            .padding(24.dp)
+                            .verticalScroll(rememberScrollState()),
+                        ui = ui,
+                        viewModel = viewModel
+                    )
+
+                    is AuthState.NeedsReauth -> ReauthPane(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                            .padding(24.dp)
+                            .verticalScroll(rememberScrollState()),
+                        ui = ui,
+                        viewModel = viewModel,
+                        userLabel = state.session.displayName
+                            ?: "id${state.session.userId}"
+                    )
+
+                    is AuthState.Ready -> Unit
+                }
             }
         }
     }
@@ -353,57 +148,17 @@ private fun LoginPane(
     ) {
         Text("VK Music", style = MaterialTheme.typography.displaySmall)
         Text(
-            "Войдите через VK — как в браузере, с подтверждением доступа. Регистрация приложения на id.vk.com не нужна.",
+            "Войдите через браузер Kate — телефон, SMS, Max или пароль. Сессия сохранится для музыки.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Button(
-            onClick = { viewModel.startWebLogin(VkLoginActivity.PROFILE_OFFICIAL) },
+            onClick = viewModel::startWebLogin,
             modifier = Modifier.fillMaxWidth(),
             enabled = !ui.busy
         ) {
-            Text("Войти через VK")
-        }
-        OutlinedButton(
-            onClick = { viewModel.startWebLogin(VkLoginActivity.PROFILE_KATE) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !ui.busy
-        ) {
-            Text("Войти (Kate, запасной)")
-        }
-        Text(
-            "Основной вход — как официальный клиент (нужен для музыки). " +
-                "На странице VK введите логин/пароль; «Войти через приложение» лучше не жать.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        if (ui.vkidConfigured) {
-            Text("или VK ID", style = MaterialTheme.typography.labelLarge)
-            OneTap(
-                modifier = Modifier.fillMaxWidth(),
-                onAuth = { _: OneTapOAuth?, token: AccessToken ->
-                    viewModel.onVkIdAuth(token)
-                },
-                onAuthCode = { _: AuthCodeData, _: Boolean -> },
-                onFail = { _: OneTapOAuth?, fail ->
-                    viewModel.onVkIdFail(fail.description)
-                },
-                authParams = VKIDAuthUiParams {
-                    scopes = setOf("vkid.personal_info")
-                }
-            )
-        }
-
-        Text("или", style = MaterialTheme.typography.labelLarge)
-
-        if (!ui.showClientForm) {
-            TextButton(onClick = viewModel::openClientForm) {
-                Text("Войти логином и паролем")
-            }
-        } else {
-            ClientLoginForm(ui, viewModel)
+            Text("Войти через Kate")
         }
 
         if (ui.busy) {
@@ -413,7 +168,7 @@ private fun LoginPane(
 }
 
 @Composable
-private fun FallbackPane(
+private fun ReauthPane(
     modifier: Modifier,
     ui: AuthUiState,
     viewModel: AuthViewModel,
@@ -423,80 +178,24 @@ private fun FallbackPane(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Нужен доступ к музыке", style = MaterialTheme.typography.headlineSmall)
+        Text("Нужен повторный вход", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Сессия $userLabel есть, но audio.* недоступен. Попробуйте другой способ входа или логин/пароль.",
+            "Сессия $userLabel не даёт доступ к музыке. Войдите через Kate ещё раз.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Button(
-            onClick = { viewModel.startWebLogin(VkLoginActivity.PROFILE_OFFICIAL) },
+            onClick = viewModel::startWebLogin,
             modifier = Modifier.fillMaxWidth(),
             enabled = !ui.busy
         ) {
-            Text("Войти (официальный клиент)")
+            Text("Войти через Kate")
         }
-        OutlinedButton(
-            onClick = { viewModel.startWebLogin(VkLoginActivity.PROFILE_KATE) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !ui.busy
-        ) {
-            Text("Повторить (Kate)")
-        }
-        ClientLoginForm(ui, viewModel)
         TextButton(onClick = viewModel::logout) {
             Text("Выйти")
         }
         if (ui.busy) {
             CircularProgressIndicator()
-        }
-    }
-}
-
-@Composable
-private fun ClientLoginForm(ui: AuthUiState, viewModel: AuthViewModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(
-            value = ui.login,
-            onValueChange = viewModel::updateLogin,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Телефон или email") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
-        )
-        OutlinedTextField(
-            value = ui.password,
-            onValueChange = viewModel::updatePassword,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Пароль") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-        )
-        if (ui.needsTwoFactor) {
-            ui.twoFactorHint?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall)
-            }
-            OutlinedTextField(
-                value = ui.twoFactorCode,
-                onValueChange = viewModel::updateTwoFactor,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Код 2FA") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-        }
-        Button(
-            onClick = viewModel::submitClientLogin,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !ui.busy
-        ) {
-            Text(if (ui.needsTwoFactor) "Подтвердить код" else "Получить audio-токен")
-        }
-        if (ui.authState is AuthState.LoggedOut) {
-            TextButton(onClick = viewModel::closeClientForm) {
-                Text("Скрыть форму")
-            }
         }
     }
 }

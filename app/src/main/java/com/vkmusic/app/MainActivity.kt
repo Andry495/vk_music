@@ -27,8 +27,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        authViewModel.launchWebLogin = { profile ->
-            webLoginLauncher.launch(VkLoginActivity.createIntent(this, profile))
+        authViewModel.launchWebLogin = {
+            webLoginLauncher.launch(VkLoginActivity.createIntent(this))
         }
         enableEdgeToEdge()
         setContent {

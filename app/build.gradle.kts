@@ -2,11 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("vkid.manifest.placeholders")
 }
-
-val vkidClientId = rootProject.extra["vkidClientId"] as String
-val vkidConfigured = rootProject.extra["vkidConfigured"] as Boolean
 
 android {
     namespace = "com.vkmusic.app"
@@ -18,9 +14,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-
-        buildConfigField("String", "VKID_CLIENT_ID", "\"$vkidClientId\"")
-        buildConfigField("boolean", "VKID_CONFIGURED", "$vkidConfigured")
     }
 
     buildTypes {
@@ -44,7 +37,6 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 
     packaging {
@@ -75,8 +67,8 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.database)
+    implementation(libs.androidx.media3.datasource)
     implementation(libs.androidx.media3.ui)
-
-    implementation(libs.vkid)
-    implementation(libs.vkid.onetap.compose)
+    implementation(libs.coil.compose)
 }

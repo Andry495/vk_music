@@ -1,42 +1,40 @@
 package com.vkmusic.app
 
 import android.app.Application
-import com.vk.id.VKID
 import com.vkmusic.app.auth.AudioAccessProbe
+import com.vkmusic.app.auth.SessionKeeper
 import com.vkmusic.app.auth.SessionStore
-import com.vkmusic.app.auth.VkClientAuth
-import com.vkmusic.app.auth.VkIdAuth
+import androidx.media3.common.util.UnstableApi
+import com.vkmusic.app.player.CacheSettingsStore
 import com.vkmusic.app.player.MusicPlayer
-import com.vkmusic.app.vk.VkApiClient
 import com.vkmusic.app.vk.VkWebAudioClient
-import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class VkMusicApp : Application() {
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     lateinit var sessionStore: SessionStore
         private set
-    lateinit var vkApiClient: VkApiClient
+    lateinit var sessionKeeper: SessionKeeper
         private set
     lateinit var webAudioClient: VkWebAudioClient
         private set
     lateinit var audioAccessProbe: AudioAccessProbe
         private set
-    lateinit var vkClientAuth: VkClientAuth
-        private set
     lateinit var musicPlayer: MusicPlayer
         private set
 
+    @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
         sessionStore = SessionStore(this)
-        vkApiClient = VkApiClient()
+        sessionKeeper = SessionKeeper()
         webAudioClient = VkWebAudioClient()
-        audioAccessProbe = AudioAccessProbe(vkApiClient, webAudioClient)
-        vkClientAuth = VkClientAuth(vkApiClient)
+        audioAccessProbe = AudioAccessProbe(webAudioClient, sessionKeeper)
+        appScope.launch { CacheSettingsStore.hydrate(this@VkMusicApp) }
         musicPlayer = MusicPlayer(this)
-
-        if (VkIdAuth.isConfigured) {
-            VKID.init(this)
-            VKID.instance.setLocale(Locale("ru"))
-        }
     }
 }

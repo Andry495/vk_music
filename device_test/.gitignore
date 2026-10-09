@@ -1,0 +1,8 @@
+# uiautomator dumps / local logs — только *.py в git
+*.xml
+*.txt
+*.log
+tmp.*
+now.*
+_peek_ui.py
+!README.md

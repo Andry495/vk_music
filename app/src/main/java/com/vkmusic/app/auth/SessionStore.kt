@@ -15,7 +15,6 @@ class SessionStore(private val context: Context) {
     private object Keys {
         val ACCESS_TOKEN = stringPreferencesKey("access_token")
         val USER_ID = longPreferencesKey("user_id")
-        val SOURCE = stringPreferencesKey("source")
         val USER_AGENT = stringPreferencesKey("user_agent")
         val EXPIRES_AT = longPreferencesKey("expires_at")
         val DISPLAY_NAME = stringPreferencesKey("display_name")
@@ -26,13 +25,9 @@ class SessionStore(private val context: Context) {
     val sessionFlow: Flow<VkSession?> = context.sessionDataStore.data.map { prefs ->
         val token = prefs[Keys.ACCESS_TOKEN] ?: return@map null
         val userId = prefs[Keys.USER_ID] ?: return@map null
-        val sourceName = prefs[Keys.SOURCE] ?: return@map null
-        val source = runCatching { AuthSource.valueOf(sourceName) }.getOrNull()
-            ?: return@map null
         VkSession(
             accessToken = token,
             userId = userId,
-            source = source,
             userAgent = prefs[Keys.USER_AGENT].orEmpty(),
             expiresAtEpochMs = prefs[Keys.EXPIRES_AT] ?: 0L,
             displayName = prefs[Keys.DISPLAY_NAME],
@@ -45,7 +40,6 @@ class SessionStore(private val context: Context) {
         context.sessionDataStore.edit { prefs ->
             prefs[Keys.ACCESS_TOKEN] = session.accessToken
             prefs[Keys.USER_ID] = session.userId
-            prefs[Keys.SOURCE] = session.source.name
             prefs[Keys.USER_AGENT] = session.userAgent
             prefs[Keys.EXPIRES_AT] = session.expiresAtEpochMs
             prefs[Keys.COOKIES] = session.cookies
@@ -55,6 +49,8 @@ class SessionStore(private val context: Context) {
             } else {
                 prefs.remove(Keys.DISPLAY_NAME)
             }
+            // legacy key cleanup
+            prefs.remove(stringPreferencesKey("source"))
         }
     }
 

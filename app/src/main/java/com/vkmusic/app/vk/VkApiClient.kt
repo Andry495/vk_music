@@ -1,6 +1,5 @@
 package com.vkmusic.app.vk
 
-import com.vkmusic.app.auth.AuthSource
 import com.vkmusic.app.auth.VkSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -34,12 +33,7 @@ class VkApiClient(
         apiBase: String = API_BASE_RU
     ): JSONObject = withContext(Dispatchers.IO) {
         val ua = userAgentOverride?.takeIf { it.isNotBlank() }
-            ?: session.userAgent.ifBlank {
-                when (session.source) {
-                    AuthSource.Client, AuthSource.WebView -> VkClientProfiles.Official.userAgent
-                    AuthSource.VkId -> DEFAULT_UA
-                }
-            }
+            ?: session.userAgent.ifBlank { VkClientProfiles.Kate.userAgent }
 
         val request = if (post) {
             val form = FormBody.Builder()
@@ -97,9 +91,6 @@ class VkApiClient(
     }
 }
 
-private const val DEFAULT_UA =
-    "VKMusicAndroid/0.1 (Android; VK ID)"
-
 object VkClientProfiles {
     data class Profile(
         val name: String,
@@ -108,20 +99,11 @@ object VkClientProfiles {
         val userAgent: String
     )
 
+    /** Единственный рабочий профиль входа — Kate Mobile (браузерный OAuth). */
     val Kate = Profile(
         name = "Kate",
         clientId = "2685278",
         clientSecret = "lxhD8OD7dMsqtXIm5IUY",
         userAgent = "KateMobileAndroid/72.1 lite-535 (Android 11; SDK 30; arm64-v8a; Google Pixel 5; ru)"
     )
-
-    /** Official Android client — нужен для catalog.* / современного audio API. */
-    val Official = Profile(
-        name = "Official",
-        clientId = "2274003",
-        clientSecret = "hHbZxrka2uZ6jB1inYsH",
-        userAgent = "VKAndroidApp/8.99-25871 (Android 13; SDK 33; arm64-v8a; Google Pixel 7; ru; 1080x2400)"
-    )
-
-    val all = listOf(Official, Kate)
 }
